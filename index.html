@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Web POS Modern</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --text-color: #ffffff;
+            --accent-color: #6C63FF; /* Couleur des boutons d'action */
+            --keypad-bg: #1E1E1E;
+            --keypad-hover: #2d2d2d;
+            --danger-color: #ff4757;
+            --success-color: #2ecc71;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body, html { height: 100%; background-color: var(--bg-color); color: var(--text-color); display: flex; justify-content: center; align-items: center; overflow: hidden; }
+
+        .pos-container {
+            width: 100%;
+            max-width: 400px;
+            height: 100%;
+            max-height: 800px;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        /* --- Affichage du Montant --- */
+        .display-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: flex-end;
+            padding: 20px 0;
+        }
+        .currency-symbol { font-size: 2rem; opacity: 0.6; }
+        #amount-display { font-size: 4.5rem; font-weight: bold; letter-spacing: -2px; }
+
+        /* --- Pavé Numérique --- */
+        .keypad-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        .key {
+            background-color: var(--keypad-bg);
+            border: none;
+            color: var(--text-color);
+            font-size: 1.8rem;
+            padding: 20px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            user-select: none;
+        }
+        .key:active { background-color: var(--keypad-hover); transform: scale(0.98); }
+        .key-clear { color: var(--danger-color); }
+
+        /* --- Boutons d'Action --- */
+        .actions-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .action-btn {
+            border: none;
+            padding: 18px;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+        }
+        .action-btn:active { opacity: 0.8; }
+        .btn-terminal { background-color: var(--keypad-bg); color: var(--text-color); }
+        .btn-manual { background-color: var(--accent-color); color: white; }
+        .icon { font-size: 1.5rem; }
+
+        /* --- Modal de Saisie Manuelle (Caché par défaut) --- */
+        #manual-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: var(--bg-color); z-index: 100;
+            padding: 30px; display: flex; flex-direction: column;
+            transition: transform 0.3s ease-in-out;
+            transform: translateY(100%); /* Caché en bas */
+        }
+        #manual-modal.active { transform: translateY(0); }
+
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .close-btn { background: none; border: none; color: var(--text-color); font-size: 2rem; cursor: pointer; }
+        
+        .manual-form input {
+            width: 100%; padding: 15px; margin-bottom: 15px;
+            background-color: var(--keypad-bg); border: 1px solid #333;
+            border-radius: 8px; color: var(--text-color); font-size: 1.1rem;
+            outline: none;
+        }
+        .manual-form input:focus { border-color: var(--accent-color); }
+        .flex-row { display: flex; gap: 15px; }
+        .pay-btn {
+            width: 100%; padding: 18px; background-color: var(--success-color);
+            border: none; border-radius: 12px; color: white; font-size: 1.2rem; font-weight: bold; cursor: pointer;
+        }
+
+        /* --- Status --- */
+        #status-message {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            padding: 10px 20px; border-radius: 20px; font-weight: 600; z-index: 200;
+            opacity: 0; transition: opacity 0.3s; pointer-events: none;
+        }
+        #status-message.loading { background-color: #e1b12c; color: black; opacity: 1; }
+        #status-message.success { background-color: var(--success-color); color: white; opacity: 1; }
+        #status-message.error { background-color: var(--danger-color); color: white; opacity: 1; }
+
+    </style>
+</head>
+<body>
+
+    <div id="status-message"></div>
+
+    <div class="pos-container">
+        <div class="display-area">
+            <div><span class="currency-symbol">£</span> <span id="amount-display">0.00</span></div>
+        </div>
+
+        <div class="keypad-grid">
+            <button class="key" onclick="appendNumber('1')">1</button>
+            <button class="key" onclick="appendNumber('2')">2</button>
+            <button class="key" onclick="appendNumber('3')">3</button>
+            <button class="key" onclick="appendNumber('4')">4</button>
+            <button class="key" onclick="appendNumber('5')">5</button>
+            <button class="key" onclick="appendNumber('6')">6</button>
+            <button class="key" onclick="appendNumber('7')">7</button>
+            <button class="key" onclick="appendNumber('8')">8</button>
+            <button class="key" onclick="appendNumber('9')">9</button>
+            <button class="key key-clear" onclick="clearDisplay()">C</button>
+            <button class="key" onclick="appendNumber('0')">0</button>
+            <button class="key" onclick="backspace()">←</button>
+        </div>
+
+        <div class="actions-grid">
+            <button class="action-btn btn-terminal" onclick="startTerminalPayment()">
+                <span class="icon">📡</span>
+                Terminal Reader
+            </button>
+            <button class="action-btn btn-manual" onclick="openManualModal()">
+                <span class="icon">💳</span>
+                Saisie Manuelle
+            </button>
+        </div>
+    </div>
+
+    <div id="manual-modal">
+        <div class="modal-header">
+            <h2>Saisie de Carte</h2>
+            <button class="close-btn" onclick="closeManualModal()">×</button>
+        </div>
+        <div class="manual-form">
+            <div style="margin-bottom: 20px; font-size: 1.5rem; text-align: center;">
+                Montant à payer : £ <span id="modal-amount-display">0.00</span>
+            </div>
+            <input type="tel" id="card-number" placeholder="Numéro de carte (16 chiffres)" maxlength="19">
+            <div class="flex-row">
+                <input type="tel" id="card-exp-month" placeholder="MM" maxlength="2" style="flex: 1;">
+                <input type="tel" id="card-exp-year" placeholder="AA" maxlength="2" style="flex: 1;">
+                <input type="tel" id="card-cvc" placeholder="CVC" maxlength="4" style="flex: 1;">
+            </div>
+            <button class="pay-btn" onclick="processManualPay()">Confirmer le Paiement</button>
+        </div>
+    </div>
+
+
+    <script>
+        // --- CONFIGURATION ---
+        // L'URL de votre backend sur Render
+        const BACKEND_URL = 'https://pos-2mn.onrender.com'; 
+        
+        // IMPORTANT : Pour le paiement Terminal, il faut l'ID de votre lecteur enregistré (ex: 'tmr_xxx')
+        // Mettez le vrai ID ici si vous en avez un, sinon laissez vide pour tester.
+        const READER_ID = ''; 
+
+        // --- LOGIQUE DU PAVÉ NUMÉRIQUE ---
+        let currentAmountCents = 0; // Le montant est stocké en centimes (ex: 1000 pour 10.00)
+
+        function updateDisplay() {
+            const pounds = (currentAmountCents / 100).toFixed(2);
+            document.getElementById('amount-display').innerText = pounds;
+            document.getElementById('modal-amount-display').innerText = pounds;
+        }
+
+        function appendNumber(num) {
+            if (currentAmountCents.toString().length >= 7) return; // Limite de sécurité
+            currentAmountCents = (currentAmountCents * 10) + parseInt(num);
+            updateDisplay();
+        }
+
+        function clearDisplay() {
+            currentAmountCents = 0;
+            updateDisplay();
+        }
+
+        function backspace() {
+            currentAmountCents = Math.floor(currentAmountCents / 10);
+            updateDisplay();
+        }
+
+        // --- GESTION DES MODALES ET STATUTS ---
+        function openManualModal() {
+            if (currentAmountCents === 0) { showStatus('error', "Entrez un montant d'abord"); return; }
+            document.getElementById('manual-modal').classList.add('active');
+        }
+        function closeManualModal() {
+            document.getElementById('manual-modal').classList.remove('active');
+            // Reset des champs
+            document.getElementById('card-number').value = '';
+            document.getElementById('card-exp-month').value = '';
+            document.getElementById('card-exp-year').value = '';
+            document.getElementById('card-cvc').value = '';
+        }
+
+        function showStatus(type, message) {
+            const statusEl = document.getElementById('status-message');
+            statusEl.innerText = message;
+            statusEl.className = type; // 'loading', 'success', ou 'error'
+            setTimeout(() => { statusEl.className = ''; }, 3000); // Cache après 3s sauf si loading
+        }
+
+
+        // --- LOGIQUE DE PAIEMENT MANUEL (Votre route Ruby fonctionne ici) ---
+        async function processManualPay() {
+            if (currentAmountCents === 0) return;
+
+            showStatus('loading', "Traitement du paiement manuel...");
+            
+            const payload = {
+                amount: currentAmountCents, // Envoi en centimes (ex: 1250 pour 12.50£)
+                card_number: document.getElementById('card-number').value.replace(/\s/g, ''),
+                exp_month: document.getElementById('card-exp-month').value,
+                exp_year: document.getElementById('card-exp-year').value,
+                cvc: document.getElementById('card-cvc').value
+            };
+
+            try {
+                const response = await fetch(BACKEND_URL + '/process_manual_online_payment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.status === 'succeeded') {
+                    showStatus('success', "✅ Paiement manuel réussi !");
+                    closeManualModal();
+                    clearDisplay();
+                } else {
+                    throw new Error(data.error || data.message || "Paiement refusé");
+                }
+            } catch (error) {
+                showStatus('error', "❌ Erreur: " + error.message);
+            }
+        }
+
+
+        // --- LOGIQUE DE PAIEMENT TERMINAL (Nécessite un vrai lecteur) ---
+        async function startTerminalPayment() {
+            if (currentAmountCents === 0) { showStatus('error', "Entrez un montant d'abord"); return; }
+            if (!READER_ID) { showStatus('error', "⚠️ Aucun lecteur configuré dans le code JS (READER_ID manquant)."); return; }
+
+            showStatus('loading', "📡 Initialisation du lecteur...");
+
+            try {
+                // Étape 1 : Créer l'intention de paiement
+                const intentResponse = await fetch(BACKEND_URL + '/create_payment_intent', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        amount: currentAmountCents,
+                        mode: 'terminal' 
+                    })
+                });
+                const intentData = await intentResponse.json();
+                if (intentData.error) throw new Error(intentData.error);
+
+                showStatus('loading', "Veuillez présenter la carte sur le lecteur...");
+
+                // Étape 2 : Demander au lecteur de traiter
+                const processResponse = await fetch(BACKEND_URL + '/process_terminal_payment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        reader_id: READER_ID,
+                        payment_intent_id: intentData.id
+                    })
+                });
+                const processData = await processResponse.json();
+                
+                if (processData.error) {
+                    throw new Error(processData.error);
+                } else {
+                     // Note: Le vrai succès dépend du statut final du lecteur. 
+                     // Pour l'instant, on suppose que si l'appel passe, c'est en cours.
+                    showStatus('success', "✅ Transaction envoyée au lecteur !");
+                    clearDisplay();
+                }
+
+            } catch (error) {
+                showStatus('error', "❌ Erreur Terminal: " + error.message);
+            }
+        }
+    </script>
+</body>
+</html>
