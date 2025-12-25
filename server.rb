@@ -49,7 +49,7 @@ post '/create_payment_intent' do
 
   params = {
     amount: data['amount'],
-    currency: 'gbp','usd','eur',
+    currency: 'eur',
     capture_method: 'automatic',
   }
 
@@ -91,7 +91,7 @@ post '/process_manual_online_payment' do
     })
     intent = Stripe::PaymentIntent.create({
       amount: data['amount'],
-      currency: 'gbp','usd','eur',
+      currency: 'eur',
       payment_method: payment_method.id,
       confirm: true,
       error_on_requires_action: true, 
