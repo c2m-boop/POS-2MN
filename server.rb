@@ -7,7 +7,8 @@ Stripe.api_key = 'sk_live_51Sb8iRRYPCEqOawdO203oHNwigPOrAchhZhPmoGShPgnRlzoVEbhq
 set :root, File.dirname(__FILE__)
 set :public_folder, -> { File.join(root, 'public') }
 set :static, true
-set :port, 4242
+set :port, ENV['PORT'] || 4567
+set :bind, '0.0.0.0'
 
 get '/' do
   redirect '/index.html'
@@ -49,7 +50,7 @@ post '/create_payment_intent' do
 
   params = {
     amount: data['amount'],
-    currency: 'eur',
+    currency: 'gbp',
     capture_method: 'automatic',
   }
 
@@ -91,7 +92,7 @@ post '/process_manual_online_payment' do
     })
     intent = Stripe::PaymentIntent.create({
       amount: data['amount'],
-      currency: 'eur',
+      currency: 'gbp',
       payment_method: payment_method.id,
       confirm: true,
       error_on_requires_action: true, 
